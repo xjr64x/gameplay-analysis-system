@@ -191,18 +191,39 @@ class _ProcessingState:
 # PROMPTS
 # =============================================================================
 
-SYSTEM_PROMPT = """You are analyzing Call of Duty: Black Ops 6 gameplay footage. Describe what you observe as a continuous sequence of actions.
+SYSTEM_PROMPT = """You are analyzing Call of Duty: Black Ops 6 first-person gameplay footage from a SINGLE PLAYER's perspective.
 
-Rules:
-- Describe movement, positioning, gunfights, and outcomes
-- Note what leads to engagements, what happens during them, and the aftermath
-- Reference visible HUD elements (health, ammo, minimap, killfeed, scorestreaks)
-- Track objective interactions (hardpoint time, bomb plants/defuses, flag captures)
-- Note weapon usage, tactical/lethal equipment, and ability usage
-- Write in present tense
-- Be thorough but concise
+You receive an ORDERED list of frames (images) from gameplay. The user prompt provides an approximate timestamp for each image.
 
-You MUST respond in valid JSON format only. No other text."""
+Your task is to describe ONLY what the POV player does and what happens to them. Be super precise about movement, aim, shots, abilities, positioning, damage taken, kills, deaths, and objective interactions.
+
+CRITICAL RULES:
+- Describe ONLY the POV player's actions and what happens TO them.
+- Use ONLY what is directly observable in the frames and HUD.
+- If something is unclear, omit it (or mark it as "unclear"), but do NOT invent details.
+
+WHAT TO CAPTURE (high value signals for later analysis):
+- Engagement outcomes: kills/deaths, damage taken, reloads, ADS vs hipfire.
+- HUD text and medals: if you can read a medal/event (e.g., "Headshot", "Kingslayer", "Captured A"), include the text EXACTLY as shown.
+- Objective prompts (mode-specific): only say the player is capturing/planting/defusing/contesting when the HUD indicates the player is doing it.
+- Positioning & cover: mention recognizable cover/landmarks visible near the player (e.g., bus, car, doorway, headglitch, wall, window) when possible.
+
+DO NOT:
+- Speculate about other players' intentions.
+- Talk about coordination, callouts, or anything requiring audio.
+- Describe what teammates are doing unless briefly visible on screen AND directly relevant to the POV player's immediate action.
+
+OBJECTIVE LANGUAGE (mode-specific):
+- Domination: "capturing A/B/C" ONLY when capture progress is visible for the POV player.
+- Hardpoint: "in / contesting / holding hill" ONLY when the POV player is visibly in the zone.
+- Search and Destroy: "planting / defusing" ONLY when the interaction prompt/progress is visible.
+- Team Deathmatch: focus on engagements and positioning.
+
+OUTPUT FORMAT (strict):
+- Return valid JSON only.
+- Use the provided image timestamps in your narration.
+- "narration" must be a newline-separated TIMELINE. Each line MUST start with "[<time>s]" and describe what the POV player does at that moment.
+"""
 
 
 def _build_batch_prompt(
@@ -212,6 +233,7 @@ def _build_batch_prompt(
     end_time: float,
     narration_start_time: float,
     overlap_frames: int,
+    image_timestamps: list[float],
     context_history: list[str],
     match_metadata: MatchMetadata,
 ) -> str:
@@ -219,13 +241,20 @@ def _build_batch_prompt(
     time_range = f"{start_time:.1f}s - {end_time:.1f}s"
     narration_range = f"{narration_start_time:.1f}s - {end_time:.1f}s"
 
-    # Match context
+    # Match context with explicit mode reminder
     match_context = f"Map: {match_metadata.map_name} | Mode: {match_metadata.mode}"
+    mode_reminder = f"REMINDER: This is {match_metadata.mode}. Use correct objective terminology for this mode."
 
     context_section = ""
     if context_history:
         recent = context_history[-MAX_CONTEXT_HISTORY:]
         context_section = "\n\nPrevious context:\n" + "\n".join(f"- {c}" for c in recent)
+
+    # Provide a timestamp map so the model can write precise, time-anchored narration.
+    # Keep this compact but complete (img index => timestamp).
+    timestamp_map = "\n".join(
+        f"- img{i}: {t:.1f}s" for i, t in enumerate(image_timestamps)
+    )
 
     overlap_instruction = ""
     if overlap_frames > 0:
@@ -243,13 +272,21 @@ DO NOT describe these frames again. Start your narration from {narration_start_t
 
     return f"""Analyzing {position} of a Call of Duty: Black Ops 6 match.
 {match_context}
+{mode_reminder}
 Full segment time: {time_range}
 Narrate from: {narration_range}{overlap_instruction}{context_section}
 
+The images are ORDERED and correspond to these approximate timestamps:
+{timestamp_map}
+
+Only narrate images at/after {narration_start_time:.1f}s. Images earlier than that are context only.
+
+Describe ONLY what the POV player does, be super precise about their actions and what happens to them. No speculation about teammates or audio.
+
 Respond with ONLY this JSON structure:
 {{
-    "context": "2-3 sentence summary of situation at segment end (max 400 chars)",
-    "narration": "Full description of what happens from {narration_start_time:.1f}s to {end_time:.1f}s"
+    "context": "2-3 sentence summary of the player's situation at segment end (max 400 chars)",
+    "narration": "A newline-separated timeline from {narration_start_time:.1f}s to {end_time:.1f}s. Each line MUST start with [<time>s] and describe what the POV player does at that time."
 }}"""
 
 
@@ -312,13 +349,13 @@ def _select_batch_frames(
     end_idx: int,
     max_frames: int,
     diff_threshold: float = 3.0,
-) -> list[str]:
-    """Select frames using difference-based filtering."""
+) -> list[int]:
+    """Select frame INDICES (relative to the batch start) using difference-based filtering."""
     batch_paths = frame_paths[start_idx:end_idx]
     batch_scores = diff_scores[start_idx:end_idx]
 
     if len(batch_paths) <= max_frames:
-        return batch_paths
+        return list(range(len(batch_paths)))
 
     # Always include first frame
     selected = [0]
@@ -339,7 +376,7 @@ def _select_batch_frames(
         if len(batch_paths) - 1 not in selected:
             selected[-1] = len(batch_paths) - 1
 
-    return [batch_paths[i] for i in sorted(selected)]
+    return sorted(selected)
 
 
 def _resize_frame(img: Image.Image, max_size: int) -> Image.Image:
@@ -448,20 +485,30 @@ def _parse_response(response: str) -> tuple[str, str]:
     return context, narration
 
 
-def _merge_narration(segments: list[tuple[float, float, str]], model: str) -> str:
+def _merge_narration(segments: list[tuple[float, float, str]], model: str, match_metadata: MatchMetadata) -> str:
     """Merge segment narrations into coherent text using text-only model call."""
     if not segments:
         return ""
 
     formatted = [f"[{start:.1f}s-{end:.1f}s]: {text}" for start, end, text in segments]
-    prompt = f"""Below are narration segments from analyzing a gameplay video.
-Merge them into ONE coherent, flowing description. Remove any redundancy.
-Keep all important details. Write in present tense.
+    prompt = f"""Below are narration segments from analyzing a {match_metadata.mode} match on {match_metadata.map_name}.
+
+These segments describe a SINGLE PLAYER's perspective (first-person POV).
+Merge them into ONE chronological timeline.
+
+RULES:
+- Preserve time anchors. Keep the existing "[start-end]" segment labels and any per-line "[12.3s]" timestamps found inside the text.
+- If you need to rewrite, rewrite minimally: do not generalize, do not add new actions, and do not add analysis.
+- Remove redundancy (duplicate lines caused by overlap), but keep all concrete details (HUD text, medals, landmarks, objective prompts).
+- Keep focus on what the POV player does and what happens to them.
+- Write in present tense.
+- Do NOT add anything about coordination, callouts, or anything not explicitly stated.
+- Use correct terminology for {match_metadata.mode}.
 
 Segments:
 {chr(10).join(formatted)}
 
-Merged narration:"""
+Merged timeline (verbatim-ish, player-focused, no additions):"""
 
     try:
         response = chat(
@@ -548,23 +595,28 @@ def _process_single_batch(
     max_attempts = 2
 
     for attempt in range(max_attempts):
-        batch_frames = _select_batch_frames(
+        # Select frames
+        selected_indices = _select_batch_frames(
             frame_paths, diff_scores,
             boundary.start_idx, boundary.end_idx,
             frames_to_try, diff_threshold,
         )
 
-        if attempt > 0:
-            print(f"    Retry with {len(batch_frames)} frames...")
+        selected_paths = [frame_paths[boundary.start_idx + i] for i in selected_indices]
+        image_timestamps = [(boundary.start_idx + i) / target_fps for i in selected_indices]
 
-        prepared = _prepare_batch_frames(batch_frames, config.resolution, batch_dir)
+        # Prepare frames
+        prepared = _prepare_batch_frames(selected_paths, config.resolution, batch_dir)
+
+        # Build prompt
         prompt = _build_batch_prompt(
             batch_index, total_batches,
             start_time, end_time, narration_start_time,
-            boundary.overlap_frames, context_history,
+            boundary.overlap_frames, image_timestamps, context_history,
             match_metadata,
         )
 
+        # Analyze
         success, response, error = _analyze_batch(prepared, prompt, model)
 
         if success:
@@ -581,13 +633,13 @@ def _process_single_batch(
                 context_summary=context,
                 narration=narration,
                 frame_count=boundary.end_idx - boundary.start_idx,
-                frames_used=len(batch_frames),
+                frames_used=len(prepared),
                 success=True,
             )
 
-        frames_to_try -= config.fallback_frame_reduction
-        for f in os.listdir(batch_dir):
-            os.remove(os.path.join(batch_dir, f))
+        # Reduce frames for retry
+        if attempt < max_attempts - 1:
+            frames_to_try = max(10, frames_to_try - config.fallback_frame_reduction)
 
     return BatchResult(
         batch_index=batch_index,
@@ -613,18 +665,18 @@ def _process_single_batch(
 
 class GameplayInterpreter:
     """
-    Reusable video analysis pipeline.
+    Video analysis pipeline for Call of Duty gameplay.
 
     Example usage:
         interpreter = GameplayInterpreter(quality="high")
-        result = interpreter.analyze("gameplay.mp4")
+        metadata = MatchMetadata(map_name="Nuketown", mode="Domination")
+        result = interpreter.analyze("match.mp4", metadata)
         print(result.merged_narration)
-        result.save("output.json")
     """
 
     def __init__(
         self,
-        quality: str | QualityMode = QualityMode.HIGH,
+        quality: str = "high",
         model: str = DEFAULT_MODEL,
         target_fps: int = 1,
         overlap_frames: int = 5,
@@ -635,55 +687,48 @@ class GameplayInterpreter:
         Initialize the interpreter.
 
         Args:
-            quality: "high" or "fast" (or QualityMode enum)
+            quality: "high" or "fast"
             model: Ollama model name
-            target_fps: Frames per second to extract
-            overlap_frames: Number of overlap frames between batches
-            diff_threshold: Threshold for frame difference selection
+            target_fps: Frames to extract per second
+            overlap_frames: Context overlap between batches
+            diff_threshold: Visual change threshold for frame selection
             verbose: Whether to print progress
         """
-        if isinstance(quality, str):
-            quality = QualityMode(quality.lower())
-
-        self.quality_mode = quality
-        self.config = QUALITY_CONFIGS[quality]
+        self.quality_mode = QualityMode(quality)
+        self.config = QUALITY_CONFIGS[self.quality_mode]
         self.model = model
         self.target_fps = target_fps
         self.overlap_frames = overlap_frames
         self.diff_threshold = diff_threshold
         self.verbose = verbose
 
-    def _log(self, msg: str, end: str = "\n") -> None:
+    def _log(self, msg: str) -> None:
         if self.verbose:
-            print(msg, end=end)
+            print(msg)
 
     def analyze(self, video_path: str, metadata: MatchMetadata) -> PipelineResult:
         """
-        Analyze a video file.
+        Analyze a gameplay video.
 
         Args:
-            video_path: Path to the video file
-            metadata: Required match metadata (map_name, mode)
+            video_path: Path to video file
+            metadata: Match metadata (map, mode)
 
         Returns:
-            PipelineResult containing narration and metadata
-
-        Raises:
-            FileNotFoundError: If video file doesn't exist
-            ValueError: If metadata is invalid
-            subprocess.CalledProcessError: If ffmpeg/ffprobe fails
+            PipelineResult with narration and processing details
         """
-        video_path = str(Path(video_path).resolve())
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Video not found: {video_path}")
 
-        duration = _get_video_duration(video_path)
         state = _ProcessingState(
             video_path=video_path,
             match_metadata=metadata,
             quality_mode=self.quality_mode,
-            start_time=datetime.now(),
         )
+        state.start_time = datetime.now()
+
+        duration = _get_video_duration(video_path)
+        merged = ""
 
         self._log(f"\n{'=' * 60}")
         self._log("GAMEPLAY INTERPRETER - Call of Duty: Black Ops 6")
@@ -692,17 +737,17 @@ class GameplayInterpreter:
         self._log(f"Map: {metadata.map_name} | Mode: {metadata.mode}")
         self._log(f"Duration: {duration:.1f}s ({duration / 60:.1f} min)")
         self._log(f"Quality: {self.quality_mode.value} ({self.config.description})")
-        self._log(f"{'=' * 60}\n")
+        self._log(f"{'=' * 60}")
 
-        with tempfile.TemporaryDirectory() as work_dir:
-            raw_dir = os.path.join(work_dir, "raw")
-            batch_dir = os.path.join(work_dir, "batch")
-            os.makedirs(raw_dir)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            frame_dir = os.path.join(temp_dir, "frames")
+            batch_dir = os.path.join(temp_dir, "batch")
+            os.makedirs(frame_dir)
             os.makedirs(batch_dir)
 
             # Step 1: Extract frames
             self._log(f"[1/4] Extracting frames at {self.target_fps} FPS...")
-            frame_paths = _extract_frames(video_path, raw_dir, self.target_fps)
+            frame_paths = _extract_frames(video_path, frame_dir, self.target_fps)
             state.total_frames = len(frame_paths)
             self._log(f"      Extracted {len(frame_paths)} frames")
 
@@ -757,7 +802,7 @@ class GameplayInterpreter:
                 for r in state.batch_results
                 if r.success and r.narration
             ]
-            merged = _merge_narration(segments, self.model)
+            merged = _merge_narration(segments, self.model, metadata)
             if merged:
                 self._log("      ✓ Merge complete")
             else:
