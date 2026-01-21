@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
@@ -433,29 +434,38 @@ class PlayerDatabase:
 # PROMPTS
 # =============================================================================
 
-SYSTEM_PROMPT = """You are an expert Call of Duty: Black Ops 6 coach analyzing gameplay to help players improve.
+SYSTEM_PROMPT = """You are an expert Call of Duty: Black Ops 6 performance analyst reviewing first-person gameplay to help the POV player improve.
 
-Your role:
-- Analyze match footage descriptions to identify patterns
-- Compare current performance to the player's known tendencies
-- Provide specific, actionable coaching advice
-- Track whether past recommendations are being applied
-- Be encouraging but honest about areas needing improvement
+DATA YOU HAVE:
+- Text-only narration derived from gameplay frames (no audio).
+- You can only analyze what is explicitly stated in that narration.
 
-Communication style:
-- Be conversational and supportive, like a good coach
-- Be specific - reference exact moments from the match when possible
-- Prioritize the most impactful feedback (don't overwhelm with everything)
-- When giving recommendations, explain WHY it will help
+OUTPUT GOAL:
+Write like an observer who identifies *tendencies* and *their impact*, e.g.:
+"From what I can see... What helped you... A tendency that helped... One pattern to improve... My guess is..."
 
-You have access to:
-- The player's historical tendencies (strengths and weaknesses)
-- Previous recommendations you've given them
-- Their recent match history
-- The detailed narration of the match just played
+EVIDENCE REQUIREMENT (non-negotiable):
+- Every claim about a tendency (aggression, aim quality, cover usage, map area, objective behavior, etc.) must cite at least 1 concrete anchor from the narration.
+- Valid anchors: a timestamp like [12.3s], a segment label like [120.0s-150.0s], or exact HUD/medal text.
+- If you cannot cite an anchor, say it's unclear and do not state it as fact.
 
-For initial analysis, respond with the full JSON format requested.
-For follow-up questions, respond conversationally. If you have new recommendations or notice new tendencies, mention them naturally in your response."""
+STRICT LIMITS:
+- Do NOT talk about allies/coordination/communication/callouts/voice chat.
+- Do NOT speculate about what others did or should do.
+- Avoid the word "team" entirely unless the match mode name provided literally contains it and you are repeating the mode title verbatim.
+
+MODE AWARENESS:
+- Use only the terminology appropriate to the provided mode name.
+- Never mention other modes.
+
+ANALYSIS STYLE:
+- Observation → tendency → impact → actionable experiment.
+- Prefer concrete details (cover objects, landmarks, lanes, angles) if they appear in the narration.
+- Keep recommendations high-leverage (1-3), specific, and implementable solo.
+
+FORMAT:
+- Initial analysis: respond in the requested JSON schema.
+- Follow-up chat: respond in the requested JSON schema."""
 
 
 def _build_session_start_prompt(
@@ -468,32 +478,45 @@ def _build_session_start_prompt(
     """Build the prompt for starting a new analysis session."""
     return f"""A player just completed a {mode} match on {map_name} ({duration:.0f} seconds).
 
+CRITICAL REMINDER: This is {mode.upper()} mode. Use only {mode}-appropriate terminology.
+
 === PLAYER HISTORY ===
 {player_context if player_context else "This is a new player with no history yet."}
 
 === CURRENT MATCH NARRATION ===
+(This is a text description of what was observed in the player's POV. There is NO audio data.)
 {match_narration}
 
 === YOUR TASK ===
-Provide your initial analysis of this match. Include:
+Analyze THIS PLAYER's individual performance. Focus ONLY on what the player did and could do differently.
 
-1. **Opening assessment** - Overall impression of how the match went
-2. **Key observations** - 2-4 specific things you noticed (good or bad)
-3. **Comparison to history** - How does this compare to their known tendencies? Did they repeat past mistakes? Show improvement?
-4. **Recommendation check** - If they had pending recommendations, did they seem to apply them?
+Your job is to produce an evidence-grounded, tendency-based analysis in a human style.
 
-Keep your response conversational and focused. The player will be able to ask follow-up questions.
+Opening_message requirements (2-3 short paragraphs):
+- Paragraph 1: overall style (tempo/aggression), where the player spends time on the map, and how they approach the objective — with evidence anchors.
+- Paragraph 2: what HELPED the player (2-3 strengths) — each backed by evidence anchors and why it mattered.
+- Paragraph 3: one pattern to improve (1-2 weaknesses) + ONE concrete experiment to try next match.
+
+Key_observations requirements:
+- 3-6 items.
+- Each item starts with "Strength:" or "Weakness:".
+- Each item includes at least one evidence anchor in parentheses.
+
+Hard constraints:
+- Do not mention allies, coordination, callouts, or anything outside the POV narration.
+- Do not use the word "team" unless you are repeating the provided mode title verbatim.
+- Use only {mode}-appropriate terminology.
 
 Respond in this JSON format:
 {{
-    "opening_message": "Your conversational analysis (2-3 paragraphs)",
-    "key_observations": ["observation 1", "observation 2", ...],
+    "opening_message": "Your conversational analysis (2-3 paragraphs, focused on individual performance)",
+    "key_observations": ["observation about player habit 1", "observation 2", ...],
     "comparisons_to_past": ["comparison 1", ...],  // Empty list if new player
     "new_tendencies": [
         {{"type": "strength|weakness", "description": "...", "map_specific": null|"MapName"}}
     ],
     "new_recommendations": [
-        {{"recommendation": "...", "reason": "..."}}
+        {{"recommendation": "specific actionable advice for THIS player", "reason": "why this will help"}}
     ],
     "follow_up_notes": [
         {{"recommendation_id": "rec_xxx", "was_applied": true|false, "notes": "..."}}
@@ -501,16 +524,22 @@ Respond in this JSON format:
 }}"""
 
 
-def _build_chat_prompt(user_message: str, match_narration: str) -> str:
+def _build_chat_prompt(user_message: str, match_narration: str, mode: str) -> str:
     """Build prompt for a follow-up chat message."""
     return f"""The player asks: "{user_message}"
 
-Remember, you have access to the match narration if you need to reference specific moments:
+REMINDERS:
+- This was a {mode} match. Use correct terminology.
+- You only have the narration (no audio).
+- Focus on what THIS player did and can do.
+- Ground claims in concrete anchors (timestamps/segment labels/HUD text). If you can't, say it's unclear.
+- Do not mention allies, coordination, or communication.
 
-=== MATCH NARRATION (reference as needed) ===
+Match narration for reference:
 {match_narration}
 
-Respond naturally to their question. If your response includes new recommendations or observations about their tendencies, include them in the JSON format.
+Respond naturally to their question. Focus on individual performance analysis.
+If your response includes new recommendations or tendency observations, include them in JSON.
 
 Respond in this JSON format:
 {{
@@ -606,6 +635,7 @@ class GameplayReasoner:
         self._session_id: Optional[str] = None
         self._current_match: Optional[MatchRecord] = None
         self._match_narration: Optional[str] = None
+        self._match_mode: Optional[str] = None  # Store mode for chat context
         self._player_context: Optional[str] = None  # Player history at session start
         self._initial_analysis: Optional[str] = None  # The opening analysis (always kept in context)
         self._conversation_history: list[dict] = []  # Ongoing chat messages
@@ -666,6 +696,7 @@ class GameplayReasoner:
         narration = interpreter_output.merged_narration or interpreter_output.narration
 
         self._match_narration = narration
+        self._match_mode = mode  # Store for chat context
 
         # Build player context
         player_context = self._db.get_context_summary(current_map=map_name)
@@ -758,9 +789,12 @@ class GameplayReasoner:
 
         self._log(f"Processing: {message[:50]}...")
         
-        # For chat, we send just the user's message
+        # Build chat prompt with mode context
+        prompt = _build_chat_prompt(message, self._match_narration, self._match_mode)
+        
+        # For chat, we send the structured prompt
         # The model has context via _build_chat_context() in _call_model
-        response = self._call_model(message, include_history=True)
+        response = self._call_model(prompt, include_history=True)
         
         # For chat responses, we accept either plain text or JSON
         # Try to parse as JSON, but fall back to plain text
@@ -867,6 +901,7 @@ class GameplayReasoner:
         self._session_id = None
         self._current_match = None
         self._match_narration = None
+        self._match_mode = None
         self._player_context = None
         self._initial_analysis = None
         self._conversation_history = []
@@ -901,9 +936,10 @@ class GameplayReasoner:
         """Build a condensed context summary for chat turns."""
         parts = []
         
-        # Match info
+        # Match info with mode emphasis
         if self._current_match:
             parts.append(f"Current match: {self._current_match.map_name} ({self._current_match.mode})")
+            parts.append(f"IMPORTANT: This is {self._current_match.mode} mode. Use correct terminology.")
         
         # Initial analysis summary (condensed)
         if self._initial_analysis:
@@ -913,13 +949,9 @@ class GameplayReasoner:
                 summary += "..."
             parts.append(f"Initial analysis: {summary}")
         
-        # Match narration summary (so model can reference specific moments)
+        # Full match narration summary (so model can reference specific moments)
         if self._match_narration:
-            # Take first 800 chars of narration
-            narration_summary = self._match_narration[:800]
-            if len(self._match_narration) > 800:
-                narration_summary += "..."
-            parts.append(f"Match narration: {narration_summary}")
+            parts.append(f"=== MATCH NARRATION (text only, no audio) ===\n{self._match_narration}")
         
         # Any recommendations given this session
         if self._session_recommendations:
@@ -959,16 +991,52 @@ class GameplayReasoner:
 
         messages.append({"role": "user", "content": prompt})
 
+        def has_forbidden_social_language(text: str) -> bool:
+            """Guardrail to prevent drifting into ally/coordination commentary."""
+            if not text:
+                return False
+            mode = (self._match_mode or "").strip().lower()
+            cleaned = text
+            # If the mode name itself contains the word, allow ONLY the exact title.
+            if mode == "team deathmatch":
+                cleaned = re.sub(r"\bTeam Deathmatch\b", "", cleaned, flags=re.I)
+            # Catch "team", "teammate", "teamwork", etc.
+            return bool(re.search(r"\bteam\w*\b", cleaned, flags=re.I))
+
+        # Use a lower temperature to reduce generic/fluffy summaries and constraint violations.
+        temperature = 0.45 if include_history else 0.3
+
         try:
             response = chat(
                 model=self._model,
                 messages=messages,
                 options={
-                    "num_predict": 2048,
-                    "temperature": 0.7,
+                    "num_predict": 2800,
+                    "temperature": temperature,
                 },
             )
-            return response.message.content
+            text = response.message.content
+
+            # One targeted retry if the model violates the "no allies/coordination" constraint.
+            if has_forbidden_social_language(text):
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "Rewrite your response to remove the word 'team' (and any derivatives such as 'teammate') "
+                        "and remove any implication of ally coordination. Focus strictly on the POV player. "
+                        "Keep the exact same JSON schema. Ground claims in evidence anchors."),
+                })
+                retry = chat(
+                    model=self._model,
+                    messages=messages,
+                    options={
+                        "num_predict": 2800,
+                        "temperature": 0.2,
+                    },
+                )
+                return retry.message.content
+
+            return text
         except Exception as e:
             self._log(f"Model error: {e}")
             raise
@@ -1035,7 +1103,7 @@ def analyze_and_discuss(
             break
 
         response = reasoner.chat(user_input)
-        print(f"\nCoach: {response.message}\n")
+        print(f"\nAnalyst: {response.message}\n")
 
         if response.new_recommendations:
             print("💡 New Recommendations:")
@@ -1071,7 +1139,7 @@ def main() -> int:
     print("  from interpreter_v4 import analyze_video")
     print("  from reasoner import analyze_and_discuss")
     print("")
-    print("  result = analyze_video('match.mp4', 'Nuketown', 'Hardpoint')")
+    print("  result = analyze_video('match.mp4', 'Nuketown', 'Domination')")
     print("  analyze_and_discuss(result)")
     print("")
 
@@ -1098,3 +1166,7 @@ def main() -> int:
         return 0
 
     return 0
+
+
+if __name__ == "__main__":
+    exit(main())
