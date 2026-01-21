@@ -666,10 +666,10 @@ class GameplayReasoner:
         narration = interpreter_output.merged_narration or interpreter_output.narration
 
         self._match_narration = narration
-        self._player_context = player_context  # Store for reference
 
         # Build player context
         player_context = self._db.get_context_summary(current_map=map_name)
+        self._player_context = player_context  # Store for reference
 
         # Get pending recommendations for reference
         pending_recs = self._db.get_pending_recommendations()
