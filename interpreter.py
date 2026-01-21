@@ -79,3 +79,37 @@ def encoding_frames(frames: list) -> list[str]:
         encoded.append(buffer.getvalue()) # original: base64.b64encode(buffer.getvalue()).decode("utf-8")
 
     return encoded
+
+def build_prompt() -> str:
+    return (
+         "You are analyzing a sequence of images extracted from a video. "
+        "These images represent moments over time, not separate scenes. "
+        "Describe what is happening overall in the video. "
+        "Focus on actions, changes, and events. "
+        "Do not describe each image individually. "
+        "Respond in plain text only."
+    )
+
+def analyze_with_ollama(encoded_frames: list[str], prompt: str, model: str) -> str:
+    response = chat(
+        model=model,
+        messages=[{
+            "role": "user",
+            "content": prompt,
+            "images": encoded_frames,
+        }]
+    )
+    return response.message
+
+def interpret_video(video_path: str):
+    frames = sampling_video(video_path)
+    frames = preprocessing_frames(frames)
+    encoded = encoding_frames(frames)
+    prompt = build_prompt()
+    model = "qwen3-vl:8b-instruct-q4_K_M"
+    return analyze_with_ollama(encoded, prompt, model)
+
+if __name__ == "__main__":
+    video_path = "sample_gameplay.MP4"
+    results = interpret_video(video_path)
+    print(results)
