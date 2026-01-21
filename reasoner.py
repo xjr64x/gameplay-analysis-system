@@ -5,6 +5,8 @@ A conversational agent that analyzes gameplay using interpreter output,
 maintains player history, identifies patterns, and provides coaching.
 
 Works with Interpreter_v4 output to provide contextual feedback.
+
+Model: qwen3:14b-q4_K_M via Ollama (reasoning model, text-only)
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from ollama import chat
 # CONFIGURATION
 # =============================================================================
 
-DEFAULT_MODEL = "qwen3:8b-instruct"
+DEFAULT_MODEL = "qwen3:14b-q4_K_M"
 MAX_CONTEXT_MATCHES = 5
 MAX_CONTEXT_RECOMMENDATIONS = 5
 MAX_CHAT_HISTORY_TURNS = 10  # Keep last N conversation turns (user + assistant pairs)
