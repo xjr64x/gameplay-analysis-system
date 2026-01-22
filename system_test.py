@@ -8,7 +8,7 @@ This demonstrates the full flow:
 4. End session and save data
 """
 
-from interpreter_v4 import GameplayInterpreter, MatchMetadata, analyze_video
+from interpreter import GameplayInterpreter, MatchMetadata, analyze_video
 from reasoner import GameplayReasoner, analyze_and_discuss
 
 
