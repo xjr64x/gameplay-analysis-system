@@ -1,164 +1,210 @@
-# Gameplay Analysis System (Call of Duty)
+# 🎮 Gameplay Analysis System (Call of Duty)
 
-An end-to-end AI system that analyzes Call of Duty gameplay videos to extract player behavior, identify tendencies, and generate evidence-grounded performance insights. The system uses vision-language models to interpret gameplay. Reasoning models reason over patterns, and track player development across matches.
+&#x20; &#x20;
 
-**This project is designed as an AI systems pipeline, not a single model demo.**
+> **An end-to-end AI system for extracting player behavior, tendencies, and evidence-grounded insights from raw Call of Duty gameplay footage.**
 
-## Key Features
+**Audience:** AI/ML engineers, systems engineers, and technically inclined players interested in explainable, evidence-based performance analysis.
 
-- **Multi-stage AI Pipeline**: Separates perception (vision-language model) from reasoning (text model) for better explainability
-- **Evidence-Grounded Analysis**: Every claim backed by video timestamps and HUD text
-- **Temporal Context Preservation**: Batched processing with overlap maintains narrative continuity across long matches
-- **Longitudinal Player Profiling**: Tracks tendencies, strengths, and weaknesses across multiple matches
-- **Interactive Coaching Agent**: Conversational interface for asking follow-up questions about specific moments
-- **Adaptive Processing**: Quality modes balance detail vs. coverage based on hardware constraints
+This project is built as an **AI systems pipeline**, not a single-model demo. It separates *seeing* from *reasoning* to produce explainable, reproducible, and actionable insights.
 
-## Overview
+---
 
-The system processes raw gameplay footage and produces structured, explainable analysis focused on player-controlled behavior, not team coordination. It is built to answer questions such as:
+## ⚡ TL;DR (One-Screen Overview)
 
-- What patterns define my playstyle on this map?
-- What did I do differently compared to previous matches?
-- Which tendencies help or hurt my performance?
-- What concrete experiment should I try next match?
-- Did I actually apply the previous advice?
+- 📹 Input: Raw Call of Duty gameplay video (no APIs, no game stats)
+- 👁️ Interpreter: Vision-language model produces timestamped narration
+- 🧠 Reasoner: Analysis model extracts patterns and tendencies
+- 📊 Output: Evidence-grounded strengths, weaknesses, and next-match experiments
+- 🧩 Design goal: Explainable AI system under real-world hardware constraints
 
-The project emphasizes:
+---
 
-- Video understanding under real-world constraints
-- Evidence-grounded reasoning
-- Reproducibility
-- Clear separation of perception and analysis
+## ✨ What This System Does
 
-## High-Level Architecture
+- Analyzes **raw gameplay video** (no game APIs or stats exports)
+- Interprets **HUD elements, events, and player actions** using vision-language models
+- Reasons over **patterns and tendencies across time** using a dedicated analysis model
+- Builds a **persistent player profile** that evolves across matches
+- Provides **evidence-backed coaching**, not vague advice
+
+This system answers questions like:
+
+- *What patterns define my playstyle on this map?*
+- *What changed compared to my last match?*
+- *Which habits help me win gunfights faster?*
+- *What specific experiment should I try next match?*
+- *Did I actually apply the previous advice?*
+
+---
+
+## 🧠 Core Philosophy
+
+- **Explainability first** — every claim is grounded in timestamps and HUD evidence
+- **Separation of concerns** — perception ≠ reasoning
+- **Player-centric** — focuses only on player-controlled decisions
+- **Longitudinal** — insights improve as more matches are analyzed
+- **Real-world constraints** — works on consumer hardware with quantized models
+
+---
+
+## 🏗️ High-Level Architecture
+
 ```
-Gameplay Video
-      ↓
-Frame Extraction & Preprocessing
-      ↓
-Interpreter (Vision Analysis)
-      ↓
-Segmented, Timestamped Narration
-      ↓
-Reasoner (Pattern & Tendency Analysis)
-      ↓
-Player Profile + Recommendations
+┌──────────────────┐
+│ Gameplay Video   │
+└────────┬─────────┘
+         ↓
+┌──────────────────┐
+│ Frame Extraction │
+│ & Preprocessing │
+└────────┬─────────┘
+         ↓
+┌──────────────────────────┐
+│ Interpreter (Perception) │
+│ Vision-Language Model    │
+└────────┬─────────────────┘
+         ↓
+┌──────────────────────────┐
+│ Segmented, Timestamped   │
+│ Narration (What Happened)│
+└────────┬─────────────────┘
+         ↓
+┌──────────────────────────┐
+│ Reasoner (Analysis)      │
+│ Pattern & Tendency Model │
+└────────┬─────────────────┘
+         ↓
+┌──────────────────────────┐
+│ Player Profile +         │
+│ Recommendations          │
+└──────────────────────────┘
 ```
 
-The system is intentionally modular:
+> **Interpreter** answers *“What happened?”*\
+> **Reasoner** answers *“What does it mean?”*
 
-- **Interpreter** answers: *What happened?*
-- **Reasoner** answers: *What does it mean?*
+---
 
-## Interpreter
+## 👁️ Interpreter (Perception Layer)
 
-The interpreter is responsible for **perception**.
+The interpreter is responsible for **seeing and describing the match**.
 
-### What it does
+### Responsibilities
 
-- Extracts frames from gameplay video at a fixed rate
-- Processes frames in overlapping batches to preserve temporal context
-- Uses a vision-language model to interpret HUD elements, on-screen text, and visible events
-- Produces event-driven, timestamped narration describing what occurs during the match
+- Extract frames from gameplay video at a fixed sampling rate
+- Process frames in **overlapping batches** to preserve temporal continuity
+- Interpret:
+  - HUD text (kills, medals, objectives)
+  - Visible player actions
+  - Environmental interactions
+- Produce **event-driven, timestamped narration**
 
-### Design choices
+### Key Design Choices
 
-- Event-driven narration was chosen over strict schemas because smaller/quantized models tend to hallucinate missing fields.
-- The interpreter only claims player actions when supported by HUD evidence.
-- Objective medals are handled carefully:
-  - "capturing" is only stated when the HUD explicitly shows capturing progress
-  - "captured" is treated as team or objective credit unless the player is clearly on point
+- Event-based narration instead of rigid schemas
+  - Smaller / quantized models hallucinate less when allowed natural language
+- Conservative claims policy
+  - Player actions are only stated when supported by HUD or clear visuals
+- Objective medal precision
+  - **“capturing”** → only when HUD explicitly shows capture progress
+  - **“captured”** → treated as team/objective credit unless player presence is explicit
 
 ### Output
 
 - Segmented narration blocks with explicit time ranges
-- High recall for HUD text (kills, medals, objectives)
-- Conservative language when evidence is ambiguous
+- High recall for HUD elements
+- Explicit uncertainty when evidence is ambiguous
 
-## Reasoner
+---
 
-The reasoner is responsible for **analysis and judgment**.
+## 🧩 Reasoner (Analysis Layer)
 
-### What it does
+The reasoner is responsible for **judgment, comparison, and insight generation**.
 
-- Consumes the interpreter's full narration (or relevant time segments)
-- Identifies recurring behaviors and tendencies
-- Compares current performance to historical matches on the same map
-- Generates actionable, player-focused recommendations
-- Stores tendencies and advice in a persistent player profile
+### Responsibilities
 
-### Constraints
+- Consume full narration or selected time ranges
+- Identify:
+  - Recurring behaviors
+  - Positional habits
+  - Engagement tendencies
+- Compare current performance against historical matches
+- Generate **actionable, player-focused recommendations**
+- Update a persistent **player profile**
+
+### Hard Constraints
 
 The reasoner is explicitly instructed to:
 
-- Avoid motivational or "supportive companion" tone
-- Avoid team coordination advice (callouts, teammate actions)
-- Avoid inventing game mechanics, vehicles, or scorestreaks
-- Ground all claims in narration timestamps
-- Focus only on player-controlled decisions
+- ❌ Avoid motivational or “supportive companion” tone
+- ❌ Avoid team coordination or callout advice
+- ❌ Avoid inventing mechanics, vehicles, or scorestreaks
+- ❌ Avoid claims without timestamped evidence
+- ✅ Focus only on player-controlled decisions
 
 ### Output
 
 - Pattern-based analysis
 - Strengths and weaknesses with evidence
-- One concrete experiment to try next match
-- Comparison to past matches when available
+- One concrete experiment for the next match
+- Historical comparison when available
 
-## Workflow
+---
 
-1. **Run analysis on a gameplay video**  
-   The interpreter analyzes the video and produces narration.
+## 🔄 End-to-End Workflow
 
-2. **Initial reasoning pass**  
-   The reasoner generates a structured analysis and recommendations.
+1. **Analyze a gameplay video**\
+   Interpreter generates timestamped narration.
 
-3. **Interactive follow-up (optional)**  
-   Ask questions about the match ("Should I rotate more?").  
-   The reasoner answers using the full narration context.
+2. **Initial reasoning pass**\
+   Reasoner produces structured analysis and recommendations.
 
-4. **Profile update**  
-   Tendencies and recommendations are saved.
+3. **Interactive follow-up (optional)**\
+   Ask questions like *“Should I rotate earlier?”* or *“Was my positioning risky here?”*
 
-5. **Repeat**  
-   Running additional matches builds a longitudinal player profile.
+4. **Profile update**\
+   Tendencies and advice are stored.
 
-## Usage
+5. **Repeat**\
+   Additional matches refine the longitudinal player profile.
+
+---
+
+## ⚙️ Usage
 
 ### Requirements
 
-- Python 3.12.10 (recommended version)
-- Ollama (for vision-language and reasoning model serving)
+- Python **3.12.10** (recommended)
+- Ollama (model serving)
 - FFmpeg
-- Models: `qwen3:14b-q4_K_M` (reasoning model), `qwen3-vl:8b-instruct-q4_K_M` (vision model)
-- System: RTX 5080 with 16GB+ VRAM, or equivalent
+- Models:
+  - `qwen3-vl:8b-instruct-q4_K_M` (vision-language)
+  - `qwen3:14b-q4_K_M` (reasoning)
+- GPU with **16GB+ VRAM** (RTX 5080 or equivalent)
 
 ### Setup
 
 ```bash
-# Install dependencies
 pip install -r requirements.txt
 
-# Pull required Ollama models
 ollama pull qwen3-vl:8b-instruct-q4_K_M
 ollama pull qwen3:14b-q4_K_M
 
-# Place your gameplay videos in the videos/ directory
+# Place gameplay videos in videos/
 ```
 
 ### Running the System
 
 ```bash
-# Full pipeline with interactive coaching session
+# Full pipeline with interactive coaching
 python system_test.py
-
-# Or use components directly in Python:
 ```
 
 ```python
 from interpreter import analyze_video
 from reasoner import analyze_and_discuss
 
-# Analyze a video
 result = analyze_video(
     "videos/your_match.mp4",
     map_name="Nuketown",
@@ -166,42 +212,102 @@ result = analyze_video(
     quality="high"  # or "fast"
 )
 
-# Interactive coaching session
 analyze_and_discuss(result, profile_path="player_profile.json")
 ```
 
-## Limitations & Assumptions
+---
 
-- Haven't tested on 10+ minute matches
-- Assumes clear HUD visibility
-- Does not attempt full semantic understanding or 3D reconstruction
-- Analysis quality depends on video clarity and HUD legibility
-- Vision-language models may still misinterpret ambiguous visual cues; conservative phrasing is preferred
-- Assumes hardware systems have gpu's with 16GB or more of vram. 
+## ⚠️ Limitations & Assumptions (Intentional)
 
-**These limitations are intentional** to keep the system explainable and reproducible.
+- Not tested extensively on 10+ minute matches
+- Requires clear HUD visibility
+- No full semantic world modeling or 3D reconstruction
+- Vision-language models may misinterpret ambiguous visuals
+- Designed for systems with 16GB+ VRAM
+- **Assumes Ollama is installed and available locally** for model serving
 
-## Why This Project Exists
+These constraints exist to preserve **explainability and reproducibility**.
 
-This project emerged from a practical need and a technical challenge: how do you build a system that surfaces unconscious behavioral patterns from unstructured video data?
+---
 
-As a player, I noticed gaps between intent and execution. Patterns I couldn't articulate. Habits I didn't know I had. Traditional post-game stats answer "what happened" but rarely explain "why" or offer actionable insight into decision-making tendencies.
+## 🎯 Why This Project Exists
 
-This project tackles that problem through systems engineering. Rather than relying on a single model, it implements a **multi-stage pipeline** that separates perception from reasoning, maintains evidence chains, and builds longitudinal profiles. The technical challenges were significant:
+Traditional post-game stats answer *“what happened.”*\
+This system is built to answer *“why it keeps happening.”*
 
-- Processing video under real-world constraints (consumer hardware, quantized models)
-- Maintaining temporal context across long sequences
-- Grounding analysis in verifiable evidence (no hallucinated insights)
-- Building a conversational agent that stays focused on individual performance
-- Managing model context budgets across multi-turn interactions
+As a player, I noticed recurring gaps between intent and execution—habits I couldn’t articulate, positioning tendencies I didn’t consciously choose, and patterns that only became obvious when viewed across multiple matches.
 
-The result is a system that doesn't just analyze—it teaches pattern recognition. It forces specificity. It builds a persistent understanding of playstyle over time.
+This project tackles that problem through **AI systems engineering**:
 
-Beyond the practical application, this project demonstrates proficiency in AI systems architecture: orchestrating vision-language models, reasoning models, prompt engineering, context management, and stateful agents. It represents the kind of end-to-end thinking required when AI components need to work together toward a coherent goal.
+- Video understanding under real-world hardware constraints
+- Explicit separation of perception and reasoning
+- Evidence-grounded insights (no hallucinated coaching)
+- Stateful, longitudinal player modeling
+- Conversational analysis constrained by hard rules
 
-This is portfolio work that showcases both technical depth and product thinking.
+Beyond gameplay, this project demonstrates end-to-end thinking across:
 
-## Future Plans For This Project
-- Containerize it using docker
-- Make customization easier with configuration options
-- Potentially make the system available for broader applications and not only Call of Duty gameplay
+- Vision-language models
+- Reasoning models
+- Prompt engineering
+- Context management
+- Modular system design
+
+It is built as **portfolio-grade AI systems work**, not a toy demo.
+
+---
+
+## 🚀 Future Plans
+
+- Docker-based containerization
+- Config-driven customization
+- Support for additional games and analysis domains
+- Improved visualization of tendencies over time
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome, especially in the following areas:
+
+- Improving vision-language interpretation accuracy
+- Adding support for new game modes or HUD layouts
+- Enhancing reasoning prompts or evaluation logic
+- Performance optimizations for longer matches
+
+Suggested workflow:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make focused, well-documented changes
+4. Submit a pull request with a clear description
+
+This project prioritizes **clarity, evidence-grounding, and reproducibility** over feature sprawl.
+
+---
+
+## ❓ FAQ
+
+**Q: Why not use in-game stats or APIs?**\
+A: The goal is to analyze *behavior*, not post-game aggregates. Video captures intent, positioning, and decision-making that stats miss.
+
+**Q: Why separate the interpreter and reasoner?**\
+A: Separation improves explainability, reduces hallucination, and makes debugging and iteration significantly easier.
+
+**Q: Is this meant to replace coaching or VOD review?**\
+A: No. It augments manual review by surfacing patterns that are hard to notice across matches.
+
+**Q: Can this work on lower-end hardware?**\
+A: Partially. Quality modes trade coverage for detail, but 16GB+ VRAM is recommended for full fidelity.
+
+**Q: Is this Call of Duty–specific?**\
+A: The current implementation is, but the architecture is intentionally generalizable.
+
+---
+
+## 📄 License
+
+License is **to be determined**.
+
+The project is currently intended for portfolio, research, and educational use. Licensing will be added once scope and distribution goals are finalized.
+
