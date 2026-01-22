@@ -303,11 +303,3 @@ A: Partially. Quality modes trade coverage for detail, but 16GB+ VRAM is recomme
 **Q: Is this Call of Duty–specific?**\
 A: The current implementation is, but the architecture is intentionally generalizable.
 
----
-
-## 📄 License
-
-License is **to be determined**.
-
-The project is currently intended for portfolio, research, and educational use. Licensing will be added once scope and distribution goals are finalized.
-
