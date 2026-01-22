@@ -17,7 +17,7 @@ def main():
     # CONFIGURATION
     # ==========================================================================
     
-    VIDEO_PATH = "sample_gameplay.MP4"      # Your video file
+    VIDEO_PATH = "videos/sample_gameplay.MP4"      # Your video file
     MAP_NAME = "Nuketown"                   # Map played
     MODE = "Domination"                      # Game mode
     PROFILE_PATH = "player_profile.json"    # Player profile 
