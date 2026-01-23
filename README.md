@@ -215,6 +215,36 @@ result = analyze_video(
 analyze_and_discuss(result, profile_path="player_profile.json")
 ```
 
+### Docker Deployment
+
+The system can be run in Docker with GPU-accelerated Ollama:
+
+```bash
+# First-time setup: build and pull models
+docker compose build
+docker compose --profile init up
+
+# Interactive mode
+docker compose run --rm gameplay-app
+
+# Batch mode (non-interactive)
+VIDEO_PATH=/app/videos/your_match.mp4 \
+MAP_NAME=Nuketown \
+GAME_MODE=Domination \
+docker compose --profile batch up gameplay-batch
+```
+
+Configuration via environment variables:
+
+| Variable             | Default                        | Description                    |
+| -------------------- | ------------------------------ | ------------------------------ |
+| `OLLAMA_HOST`        | `http://ollama:11434`          | Ollama server URL              |
+| `INTERPRETER_MODEL`  | `qwen3-vl:8b-instruct-q4_K_M`  | Vision model                   |
+| `REASONER_MODEL`     | `qwen3:14b-q4_K_M`             | Reasoning model                |
+| `QUALITY_MODE`       | `high`                         | Processing quality             |
+
+See [DOCKER.md](DOCKER.md) for full deployment documentation.
+
 ---
 
 ## ⚠️ Limitations & Assumptions (Intentional)
@@ -259,10 +289,9 @@ It is built as **portfolio-grade AI systems work**, not a toy demo.
 
 ## 🚀 Future Plans
 
-- Docker-based containerization
-- Config-driven customization
 - Support for additional games and analysis domains
 - Improved visualization of tendencies over time
+- Web-based dashboard for profile viewing
 
 ---
 
