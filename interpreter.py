@@ -26,6 +26,8 @@ import numpy as np
 from ollama import chat
 from PIL import Image
 
+from config import config
+
 
 # =============================================================================
 # CONFIGURATION
@@ -64,7 +66,7 @@ QUALITY_CONFIGS: dict[QualityMode, QualityConfig] = {
 # Context management
 MAX_CONTEXT_CHARS = 400
 MAX_CONTEXT_HISTORY = 2
-DEFAULT_MODEL = "qwen3-vl:8b-instruct-q4_K_M"
+DEFAULT_MODEL = config.interpreter_model
 
 
 # =============================================================================

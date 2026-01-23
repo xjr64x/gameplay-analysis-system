@@ -22,12 +22,14 @@ from uuid import uuid4
 
 from ollama import chat
 
+from config import config
+
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
 
-DEFAULT_MODEL = "qwen3:14b-q4_K_M"
+DEFAULT_MODEL = config.reasoner_model
 MAX_CONTEXT_MATCHES = 5
 MAX_CONTEXT_RECOMMENDATIONS = 5
 MAX_CHAT_HISTORY_TURNS = 10  # Keep last N conversation turns (user + assistant pairs)

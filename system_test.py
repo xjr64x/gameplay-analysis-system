@@ -8,20 +8,21 @@ This demonstrates the full flow:
 4. End session and save data
 """
 
+from config import config
 from interpreter import GameplayInterpreter, MatchMetadata, analyze_video
 from reasoner import GameplayReasoner, analyze_and_discuss
 
 
 def main():
     # ==========================================================================
-    # CONFIGURATION
+    # CONFIGURATION (uses environment variables with fallbacks)
     # ==========================================================================
-    
-    VIDEO_PATH = "videos/sample_gameplay.MP4"      # Your video file
-    MAP_NAME = "Nuketown"                   # Map played
-    MODE = "Domination"                      # Game mode
-    PROFILE_PATH = "player_profile.json"    # Player profile 
-    PLAYER_ID = "player"                    # Your player identifier
+
+    VIDEO_PATH = config.video_path or "videos/sample_gameplay.MP4"
+    MAP_NAME = config.map_name or "Nuketown"
+    MODE = config.game_mode or "Domination"
+    PROFILE_PATH = str(config.profile_path)
+    PLAYER_ID = config.player_id
     
     # ==========================================================================
     # OPTION 1: Full Control (recommended for integration)
@@ -32,7 +33,7 @@ def main():
     print("=" * 60)
     
     # Run the interpreter
-    interpreter = GameplayInterpreter(quality="high", verbose=True)
+    interpreter = GameplayInterpreter(quality=config.quality_mode, verbose=True)
     metadata = MatchMetadata(map_name=MAP_NAME, mode=MODE)
     interpreter_result = interpreter.analyze(VIDEO_PATH, metadata)
     
@@ -45,7 +46,6 @@ def main():
     # Initialize reasoner
     reasoner = GameplayReasoner(
         profile_path=PROFILE_PATH,
-        model="qwen3:14b-q4_K_M",  # Reasoning model (text-only)
         verbose=True
     )
     

@@ -1,0 +1,127 @@
+version: "3.9"
+
+services:
+  # ==========================================================================
+  # Ollama - GPU-accelerated model serving
+  # ==========================================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: gameplay-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_NUM_PARALLEL=2
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/version || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - gameplay-network
+
+  # ==========================================================================
+  # Model Initialization - Pull required models on first run
+  # ==========================================================================
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: gameplay-ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ollama_models:/root/.ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Pulling interpreter model (qwen3-vl:8b-instruct-q4_K_M)..."
+        ollama pull qwen3-vl:8b-instruct-q4_K_M
+        echo "Pulling reasoner model (qwen3:14b-q4_K_M)..."
+        ollama pull qwen3:14b-q4_K_M
+        echo "Models ready!"
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    networks:
+      - gameplay-network
+    profiles:
+      - init
+
+  # ==========================================================================
+  # Gameplay Analysis Application - Interactive Mode
+  # ==========================================================================
+  gameplay-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gameplay-app
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ./videos:/app/videos:ro
+      - ./output:/app/output
+      - ./profiles:/app/profiles
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - INTERPRETER_MODEL=${INTERPRETER_MODEL:-qwen3-vl:8b-instruct-q4_K_M}
+      - REASONER_MODEL=${REASONER_MODEL:-qwen3:14b-q4_K_M}
+      - QUALITY_MODE=${QUALITY_MODE:-high}
+      - VIDEO_PATH=${VIDEO_PATH:-/app/videos/sample_gameplay.MP4}
+      - MAP_NAME=${MAP_NAME:-Nuketown}
+      - GAME_MODE=${GAME_MODE:-Domination}
+      - PLAYER_ID=${PLAYER_ID:-player}
+      - BATCH_MODE=false
+    stdin_open: true
+    tty: true
+    networks:
+      - gameplay-network
+
+  # ==========================================================================
+  # Batch Processing Mode (non-interactive)
+  # ==========================================================================
+  gameplay-batch:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gameplay-batch
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ./videos:/app/videos:ro
+      - ./output:/app/output
+      - ./profiles:/app/profiles
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - INTERPRETER_MODEL=${INTERPRETER_MODEL:-qwen3-vl:8b-instruct-q4_K_M}
+      - REASONER_MODEL=${REASONER_MODEL:-qwen3:14b-q4_K_M}
+      - QUALITY_MODE=${QUALITY_MODE:-high}
+      - VIDEO_PATH=${VIDEO_PATH:-/app/videos/sample_gameplay.MP4}
+      - MAP_NAME=${MAP_NAME:-Nuketown}
+      - GAME_MODE=${GAME_MODE:-Domination}
+      - PLAYER_ID=${PLAYER_ID:-player}
+      - BATCH_MODE=true
+    command: ["python", "batch_analyze.py"]
+    networks:
+      - gameplay-network
+    profiles:
+      - batch
+
+networks:
+  gameplay-network:
+    driver: bridge
+
+volumes:
+  ollama_models:
+    driver: local
