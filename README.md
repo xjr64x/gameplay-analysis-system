@@ -192,25 +192,73 @@ ollama pull qwen3:14b-q4_K_M
 # Place gameplay videos in videos/
 ```
 
-### Running Locally
+### CLI Commands
+
+The system provides a unified CLI through `main.py`:
 
 ```bash
 # Full pipeline with interactive coaching
-python system_test.py
+python main.py analyze videos/match.mp4 --map Nuketown --mode Domination
+
+# Batch mode (non-interactive, for automation)
+python main.py analyze videos/match.mp4 --map Nuketown --mode Domination --batch
+
+# Interpreter only (video → narration JSON)
+python main.py interpret videos/match.mp4 --map Nuketown --mode Domination
+
+# System health check (verify all components work)
+python main.py check --all
+
+# Profile management
+python main.py profile show
+python main.py profile create --player-id myname
 ```
 
+### CLI Options
+
+```bash
+# Full options for analyze command
+python main.py analyze VIDEO --map MAP --mode MODE [OPTIONS]
+
+Options:
+  --batch, -b           Non-interactive batch mode
+  --quality, -q         Processing quality: "high" (default) or "fast"
+  --fps                 Frames per second to extract (default: 1)
+  --overlap             Overlap frames between batches (default: 5)
+  --profile, -p         Path to player profile JSON
+  --player-id           Player ID for new profiles
+  --output-dir, -o      Output directory for analysis files
+  --quiet               Reduce output verbosity
+  --ollama-host         Ollama server URL
+  --interpreter-model   Vision model name
+  --reasoner-model      Reasoning model name
+```
+
+### Programmatic Usage
+
 ```python
-from interpreter import analyze_video
-from reasoner import analyze_and_discuss
+from interpreter import GameplayInterpreter, MatchMetadata
+from reasoner import GameplayReasoner
 
-result = analyze_video(
-    "videos/your_match.mp4",
-    map_name="Nuketown",
-    mode="Domination",
-    quality="high"  # or "fast"
-)
+# Run interpreter
+interpreter = GameplayInterpreter(quality="high")
+metadata = MatchMetadata(map_name="Nuketown", mode="Domination")
+result = interpreter.analyze("videos/match.mp4", metadata)
 
-analyze_and_discuss(result, profile_path="player_profile.json")
+# Run reasoner
+reasoner = GameplayReasoner("player_profile.json")
+if not reasoner.has_profile():
+    reasoner.create_profile("player")
+
+session = reasoner.start_session(result)
+print(session.opening_message)
+
+# Interactive chat
+response = reasoner.chat("What should I focus on next match?")
+print(response.message)
+
+# Save session
+summary = reasoner.end_session()
 ```
 
 ### Docker Deployment
@@ -220,28 +268,33 @@ The system runs in Docker with GPU-accelerated Ollama. Two containers: `ollama` 
 ```bash
 # Create directories and configure
 mkdir -p videos output profiles
-cp .env.example .env
-# Edit .env with your video path, map, and game mode
 
 # Start Ollama and pull models (first time only)
 docker compose up -d ollama
 docker compose --profile init up ollama-init
 
-# Run analysis
-docker compose up gameplay
+# Run analysis (batch mode)
+docker compose run --rm gameplay analyze /app/videos/match.mp4 \
+  --map Nuketown --mode Domination --batch
+
+# Run analysis (interactive)
+docker compose run --rm -it gameplay analyze /app/videos/match.mp4 \
+  --map Nuketown --mode Domination
+
+# Run system checks
+docker compose run --rm gameplay check --all
 ```
 
-Configuration via `.env` file:
+Configuration via environment variables or CLI flags:
 
 | Variable             | Default                        | Description                    |
 | -------------------- | ------------------------------ | ------------------------------ |
-| `VIDEO_PATH`         | -                              | Path to video (required)       |
-| `MAP_NAME`           | -                              | Map name (required)            |
-| `GAME_MODE`          | -                              | Game mode (required)           |
-| `PLAYER_ID`          | `player`                       | Player identifier              |
-| `QUALITY_MODE`       | `high`                         | Processing quality             |
+| `OLLAMA_HOST`        | Auto-detected                  | Ollama server URL              |
 | `INTERPRETER_MODEL`  | `qwen3-vl:8b-instruct-q4_K_M`  | Vision model                   |
 | `REASONER_MODEL`     | `qwen3:14b-q4_K_M`             | Reasoning model                |
+| `QUALITY_MODE`       | `high`                         | Processing quality             |
+| `OUTPUT_DIR`         | `.`                            | Output directory               |
+| `PROFILE_PATH`       | `player_profile.json`          | Player profile path            |
 
 See [DOCKER.md](DOCKER.md) for full deployment documentation.
 

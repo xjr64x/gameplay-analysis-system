@@ -26,12 +26,14 @@ import numpy as np
 from ollama import chat
 from PIL import Image
 
-from config import config
-
-
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
+
+def _get_default_model() -> str:
+    """Get default interpreter model from environment or hardcoded default."""
+    return os.getenv("INTERPRETER_MODEL", "qwen3-vl:8b-instruct-q4_K_M")
+
 
 class QualityMode(Enum):
     """Processing quality modes based on tested hardware limits."""
@@ -66,7 +68,6 @@ QUALITY_CONFIGS: dict[QualityMode, QualityConfig] = {
 # Context management
 MAX_CONTEXT_CHARS = 400
 MAX_CONTEXT_HISTORY = 2
-DEFAULT_MODEL = config.interpreter_model
 
 
 # =============================================================================
@@ -679,7 +680,7 @@ class GameplayInterpreter:
     def __init__(
         self,
         quality: str = "high",
-        model: str = DEFAULT_MODEL,
+        model: Optional[str] = None,
         target_fps: int = 1,
         overlap_frames: int = 5,
         diff_threshold: float = 3.0,
@@ -690,7 +691,7 @@ class GameplayInterpreter:
 
         Args:
             quality: "high" or "fast"
-            model: Ollama model name
+            model: Ollama model name (default: from INTERPRETER_MODEL env or built-in default)
             target_fps: Frames to extract per second
             overlap_frames: Context overlap between batches
             diff_threshold: Visual change threshold for frame selection
@@ -698,7 +699,7 @@ class GameplayInterpreter:
         """
         self.quality_mode = QualityMode(quality)
         self.config = QUALITY_CONFIGS[self.quality_mode]
-        self.model = model
+        self.model = model if model is not None else _get_default_model()
         self.target_fps = target_fps
         self.overlap_frames = overlap_frames
         self.diff_threshold = diff_threshold
@@ -877,7 +878,7 @@ def analyze_video(
     map_name: str,
     mode: str,
     quality: str = "high",
-    model: str = DEFAULT_MODEL,
+    model: Optional[str] = None,
     verbose: bool = True,
 ) -> PipelineResult:
     """
@@ -888,7 +889,7 @@ def analyze_video(
         map_name: Name of the map (e.g., "Nuketown", "Raid")
         mode: Game mode (e.g., "Hardpoint", "Search and Destroy")
         quality: "high" or "fast"
-        model: Ollama model name
+        model: Ollama model name (default: from INTERPRETER_MODEL env or built-in default)
         verbose: Whether to print progress
 
     Returns:
@@ -900,74 +901,13 @@ def analyze_video(
 
 
 # =============================================================================
-# CLI
+# CLI - DEPRECATED
 # =============================================================================
-
-def main() -> int:
-    """Command-line entry point."""
-    import sys
-
-    if len(sys.argv) < 4:
-        print("Usage: python gameplay_interpreter.py <video_path> <map_name> <mode> [quality]")
-        print("")
-        print("Arguments:")
-        print("  video_path  Path to the gameplay video file")
-        print("  map_name    Map name (e.g., Nuketown, Raid, Terminal)")
-        print("  mode        Game mode (e.g., Hardpoint, 'Search and Destroy', TDM)")
-        print("  quality     Optional: 'high' (default) or 'fast'")
-        print("")
-        print("Example:")
-        print("  python gameplay_interpreter.py match.mp4 Nuketown Hardpoint high")
-        return 1
-
-    video_path = sys.argv[1]
-    map_name = sys.argv[2]
-    mode = sys.argv[3]
-    quality = sys.argv[4] if len(sys.argv) > 4 else "high"
-
-    if quality not in ("high", "fast"):
-        print(f"Invalid quality mode: {quality}. Use 'high' or 'fast'.")
-        return 1
-
-    if not os.path.exists(video_path):
-        print(f"Error: Video not found: {video_path}")
-        return 1
-
-    try:
-        result = analyze_video(
-            video_path,
-            map_name=map_name,
-            mode=mode,
-            quality=quality,
-        )
-
-        print(f"\n{'=' * 60}")
-        print("VIDEO NARRATION")
-        print(f"{'=' * 60}\n")
-        print(result.merged_narration or result.narration)
-
-        output_path = result.save()
-        print(f"\n\nResults saved to: {output_path}")
-
-        return 1 if result.failed_batch_indices else 0
-
-    except Exception as e:
-        print(f"Error: {e}")
-        return 1
-
-
-if __name__ == "__main__":
-    # Usage: class based
-    # interpreter = GameplayInterpreter(quality="high")
-    # metadata = MatchMetadata(map_name="Nuketown", mode="Hardpoint")
-    # result = interpreter.analyze("match.mp4", metadata)
-
-    # Usage: one shot
-    result = analyze_video(
-        "sample_gameplay.MP4",
-        map_name="Nuketown",
-        mode="Domination",
-        quality="high",
-        verbose=True
-    )
-    print(result.merged_narration)
+# The standalone CLI has been removed. Use main.py instead:
+#   python main.py interpret video.mp4 --map Nuketown --mode Domination
+#
+# For programmatic use:
+#   from interpreter import GameplayInterpreter, MatchMetadata
+#   interpreter = GameplayInterpreter(quality="high")
+#   metadata = MatchMetadata(map_name="Nuketown", mode="Domination")
+#   result = interpreter.analyze("match.mp4", metadata)

@@ -22,14 +22,16 @@ from uuid import uuid4
 
 from ollama import chat
 
-from config import config
-
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
 
-DEFAULT_MODEL = config.reasoner_model
+def _get_default_model() -> str:
+    """Get default reasoner model from environment or hardcoded default."""
+    return os.getenv("REASONER_MODEL", "qwen3:14b-q4_K_M")
+
+
 MAX_CONTEXT_MATCHES = 5
 MAX_CONTEXT_RECOMMENDATIONS = 5
 MAX_CHAT_HISTORY_TURNS = 10  # Keep last N conversation turns (user + assistant pairs)
@@ -620,17 +622,17 @@ class GameplayReasoner:
         summary = reasoner.end_session()
     """
 
-    def __init__(self, profile_path: str, model: str = DEFAULT_MODEL, verbose: bool = True):
+    def __init__(self, profile_path: str, model: Optional[str] = None, verbose: bool = True):
         """
         Initialize the reasoner.
 
         Args:
             profile_path: Path to player profile JSON file
-            model: Ollama model name for reasoning
+            model: Ollama model name (default: from REASONER_MODEL env or built-in default)
             verbose: Whether to print debug info
         """
         self._db = PlayerDatabase(profile_path)
-        self._model = model
+        self._model = model if model is not None else _get_default_model()
         self._verbose = verbose
 
         # Session state
@@ -1052,16 +1054,16 @@ def analyze_and_discuss(
     interpreter_output,
     profile_path: str = "player_profile.json",
     player_id: str = "player",
-    model: str = DEFAULT_MODEL,
+    model: Optional[str] = None,
 ) -> None:
     """
     Convenience function for interactive analysis session.
 
     Args:
-        interpreter_output: PipelineResult from interpreter_v4
+        interpreter_output: PipelineResult from interpreter
         profile_path: Path to player profile JSON
         player_id: Player ID if creating new profile
-        model: Ollama model name
+        model: Ollama model name (default: from REASONER_MODEL env or built-in default)
     """
     reasoner = GameplayReasoner(profile_path, model=model)
 
@@ -1127,48 +1129,17 @@ def analyze_and_discuss(
 
 
 # =============================================================================
-# CLI
+# CLI - DEPRECATED
 # =============================================================================
-
-def main() -> int:
-    """Command-line entry point for testing."""
-    import sys
-
-    print("Gameplay Reasoner")
-    print("=" * 70)
-    print("\nThis module is designed to be used with Interpreter_v4 output.")
-    print("\nExample usage:")
-    print("  from interpreter_v4 import analyze_video")
-    print("  from reasoner import analyze_and_discuss")
-    print("")
-    print("  result = analyze_video('match.mp4', 'Nuketown', 'Domination')")
-    print("  analyze_and_discuss(result)")
-    print("")
-
-    # Quick test of database
-    if len(sys.argv) > 1 and sys.argv[1] == "--test":
-        print("\nRunning database test...")
-        db = PlayerDatabase("test_profile.json")
-        db.create("test_player")
-
-        # Add some test data
-        t = Tendency.create("Good aim", "strength")
-        db.add_tendency(t)
-
-        r = Recommendation.create("Check corners more often")
-        db.add_recommendation(r)
-
-        db.save()
-        print(f"Created test profile: test_profile.json")
-        print(f"Context summary:\n{db.get_context_summary()}")
-
-        # Cleanup
-        os.remove("test_profile.json")
-        print("Test passed!")
-        return 0
-
-    return 0
-
-
-if __name__ == "__main__":
-    exit(main())
+# The standalone CLI has been removed. Use main.py instead:
+#   python main.py analyze video.mp4 --map Nuketown --mode Domination
+#
+# For programmatic use:
+#   from interpreter import analyze_video
+#   from reasoner import GameplayReasoner
+#
+#   result = analyze_video("match.mp4", "Nuketown", "Domination")
+#   reasoner = GameplayReasoner("player_profile.json")
+#   session = reasoner.start_session(result)
+#   # ... chat loop ...
+#   reasoner.end_session()

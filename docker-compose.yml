@@ -3,18 +3,22 @@
 # 
 # Two containers:
 #   1. ollama    - GPU-accelerated model serving
-#   2. gameplay  - The analysis application (batch or interactive mode)
+#   2. gameplay  - The analysis application
 #
 # Usage:
 #   # First time setup - pull models:
 #   docker compose --profile init up ollama-init
 #
 #   # Run batch analysis:
-#   docker compose up gameplay
+#   VIDEO_PATH=/app/videos/gameplay.mp4 MAP_NAME=Nuketown GAME_MODE=Domination \
+#     docker compose up gameplay
 #
 #   # Run interactive mode:
-#   docker compose run --rm -it gameplay python batch_analyze.py
-#   # Or override to run a different script interactively
+#   docker compose run --rm -it gameplay analyze /app/videos/gameplay.mp4 \
+#     --map Nuketown --mode Domination
+#
+#   # Run system checks:
+#   docker compose run --rm gameplay check --all
 #
 # =============================================================================
 
@@ -101,20 +105,28 @@ services:
       - REASONER_MODEL=${REASONER_MODEL:-qwen3:14b-q4_K_M}
       # Processing settings
       - QUALITY_MODE=${QUALITY_MODE:-high}
-      # Batch mode configuration
-      - VIDEO_PATH=${VIDEO_PATH:-/app/videos/sample_gameplay.MP4}
-      - MAP_NAME=${MAP_NAME:-Nuketown}
-      - GAME_MODE=${GAME_MODE:-Domination}
-      - PLAYER_ID=${PLAYER_ID:-player}
-      - BATCH_MODE=${BATCH_MODE:-true}
       # Output paths
       - OUTPUT_DIR=/app/output
       - PROFILE_PATH=/app/profiles/${PLAYER_ID:-player}_profile.json
-    # Enable stdin/tty for interactive mode (use: docker compose run -it gameplay)
+    # Enable stdin/tty for interactive mode
     stdin_open: true
     tty: true
     networks:
       - gameplay-network
+    # Default command: batch analysis with env vars
+    # Override for other modes (see usage examples above)
+    command:
+      - "analyze"
+      - "${VIDEO_PATH:-/app/videos/sample_gameplay.mp4}"
+      - "--map"
+      - "${MAP_NAME:-Nuketown}"
+      - "--mode"
+      - "${GAME_MODE:-Domination}"
+      - "--batch"
+      - "--output-dir"
+      - "/app/output"
+      - "--profile"
+      - "/app/profiles/${PLAYER_ID:-player}_profile.json"
 
 networks:
   gameplay-network:
