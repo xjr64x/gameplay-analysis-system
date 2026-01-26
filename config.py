@@ -3,12 +3,47 @@ Configuration management for the Gameplay Analysis System.
 
 Centralizes environment variable handling and provides defaults.
 Supports both local development and containerized deployment.
+
+Local development:
+    OLLAMA_HOST defaults to http://127.0.0.1:11434 (local Ollama)
+
+Containerized (Docker):
+    Set OLLAMA_HOST=http://ollama:11434 (Docker service DNS)
+    This is set automatically in docker-compose.yml
 """
 
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+
+def _get_ollama_host() -> str:
+    """
+    Get Ollama host URL with smart defaults.
+    
+    Priority:
+    1. OLLAMA_HOST environment variable (if set)
+    2. Default based on detected environment
+    """
+    env_host = os.getenv("OLLAMA_HOST")
+    if env_host:
+        return env_host
+    
+    # Check if we're likely running in a container
+    # (Docker sets /.dockerenv or we can check for typical container paths)
+    in_container = (
+        os.path.exists("/.dockerenv") or 
+        os.path.exists("/run/.containerenv") or
+        os.getenv("DOCKER_CONTAINER") == "true"
+    )
+    
+    if in_container:
+        # In container: use Docker service DNS name
+        return "http://ollama:11434"
+    else:
+        # Local development: use localhost
+        return "http://127.0.0.1:11434"
 
 
 @dataclass(frozen=True)
@@ -45,7 +80,8 @@ def load_config() -> Config:
     Load configuration from environment variables with sensible defaults.
 
     Environment Variables:
-        OLLAMA_HOST: Ollama server URL (default: http://127.0.0.1:11434)
+        OLLAMA_HOST: Ollama server URL 
+                     Default: http://127.0.0.1:11434 (local) or http://ollama:11434 (container)
         INTERPRETER_MODEL: Vision model name (default: qwen3-vl:8b-instruct-q4_K_M)
         REASONER_MODEL: Reasoning model name (default: qwen3:14b-q4_K_M)
         QUALITY_MODE: Processing quality - "high" or "fast" (default: high)
@@ -62,7 +98,7 @@ def load_config() -> Config:
         Config: Immutable configuration object
     """
     return Config(
-        ollama_host=os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434"),
+        ollama_host=_get_ollama_host(),
         interpreter_model=os.getenv(
             "INTERPRETER_MODEL", "qwen3-vl:8b-instruct-q4_K_M"
         ),

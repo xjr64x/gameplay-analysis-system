@@ -46,8 +46,10 @@ WORKDIR /app
 COPY --chown=appuser:appuser config.py .
 COPY --chown=appuser:appuser interpreter.py .
 COPY --chown=appuser:appuser reasoner.py .
-COPY --chown=appuser:appuser system_test.py .
 COPY --chown=appuser:appuser batch_analyze.py .
+
+# Copy system_test.py only if it exists (optional)
+COPY --chown=appuser:appuser system_test.p[y] ./
 
 # Create directories for volumes
 RUN mkdir -p /app/videos /app/output /app/profiles && \
@@ -56,7 +58,8 @@ RUN mkdir -p /app/videos /app/output /app/profiles && \
 # Switch to non-root user
 USER appuser
 
-# Environment variables with sensible defaults
+# Environment variables with container-appropriate defaults
+# OLLAMA_HOST points to the ollama service name for container networking
 ENV OLLAMA_HOST=http://ollama:11434 \
     INTERPRETER_MODEL=qwen3-vl:8b-instruct-q4_K_M \
     REASONER_MODEL=qwen3:14b-q4_K_M \
@@ -64,7 +67,12 @@ ENV OLLAMA_HOST=http://ollama:11434 \
     VIDEO_DIR=/app/videos \
     OUTPUT_DIR=/app/output \
     PROFILE_PATH=/app/profiles/player_profile.json \
+    BATCH_MODE=false \
     PYTHONUNBUFFERED=1
 
-# Default command (can be overridden)
-CMD ["python", "system_test.py"]
+# Healthcheck to verify ollama is reachable (uses Python since it's already installed)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('${OLLAMA_HOST}/api/version')" || exit 1
+
+# Default command runs batch analysis (can be overridden)
+CMD ["python", "batch_analyze.py"]

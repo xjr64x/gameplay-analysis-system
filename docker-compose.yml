@@ -1,4 +1,22 @@
-version: "3.9"
+# =============================================================================
+# Docker Compose for Gameplay Analysis System
+# 
+# Two containers:
+#   1. ollama    - GPU-accelerated model serving
+#   2. gameplay  - The analysis application (batch or interactive mode)
+#
+# Usage:
+#   # First time setup - pull models:
+#   docker compose --profile init up ollama-init
+#
+#   # Run batch analysis:
+#   docker compose up gameplay
+#
+#   # Run interactive mode:
+#   docker compose run --rm -it gameplay python batch_analyze.py
+#   # Or override to run a different script interactively
+#
+# =============================================================================
 
 services:
   # ==========================================================================
@@ -23,11 +41,11 @@ services:
               count: 1
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/version || exit 1"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 10s
     networks:
       - gameplay-network
 
@@ -58,9 +76,9 @@ services:
       - init
 
   # ==========================================================================
-  # Gameplay Analysis Application - Interactive Mode
+  # Gameplay Analysis Application
   # ==========================================================================
-  gameplay-app:
+  gameplay:
     build:
       context: .
       dockerfile: Dockerfile
@@ -69,54 +87,34 @@ services:
       ollama:
         condition: service_healthy
     volumes:
+      # Input videos (read-only)
       - ./videos:/app/videos:ro
+      # Output directory for analysis results
       - ./output:/app/output
+      # Persistent player profiles
       - ./profiles:/app/profiles
     environment:
+      # Ollama connection - uses Docker network DNS
       - OLLAMA_HOST=http://ollama:11434
+      # Model configuration
       - INTERPRETER_MODEL=${INTERPRETER_MODEL:-qwen3-vl:8b-instruct-q4_K_M}
       - REASONER_MODEL=${REASONER_MODEL:-qwen3:14b-q4_K_M}
+      # Processing settings
       - QUALITY_MODE=${QUALITY_MODE:-high}
+      # Batch mode configuration
       - VIDEO_PATH=${VIDEO_PATH:-/app/videos/sample_gameplay.MP4}
       - MAP_NAME=${MAP_NAME:-Nuketown}
       - GAME_MODE=${GAME_MODE:-Domination}
       - PLAYER_ID=${PLAYER_ID:-player}
-      - BATCH_MODE=false
+      - BATCH_MODE=${BATCH_MODE:-true}
+      # Output paths
+      - OUTPUT_DIR=/app/output
+      - PROFILE_PATH=/app/profiles/${PLAYER_ID:-player}_profile.json
+    # Enable stdin/tty for interactive mode (use: docker compose run -it gameplay)
     stdin_open: true
     tty: true
     networks:
       - gameplay-network
-
-  # ==========================================================================
-  # Batch Processing Mode (non-interactive)
-  # ==========================================================================
-  gameplay-batch:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: gameplay-batch
-    depends_on:
-      ollama:
-        condition: service_healthy
-    volumes:
-      - ./videos:/app/videos:ro
-      - ./output:/app/output
-      - ./profiles:/app/profiles
-    environment:
-      - OLLAMA_HOST=http://ollama:11434
-      - INTERPRETER_MODEL=${INTERPRETER_MODEL:-qwen3-vl:8b-instruct-q4_K_M}
-      - REASONER_MODEL=${REASONER_MODEL:-qwen3:14b-q4_K_M}
-      - QUALITY_MODE=${QUALITY_MODE:-high}
-      - VIDEO_PATH=${VIDEO_PATH:-/app/videos/sample_gameplay.MP4}
-      - MAP_NAME=${MAP_NAME:-Nuketown}
-      - GAME_MODE=${GAME_MODE:-Domination}
-      - PLAYER_ID=${PLAYER_ID:-player}
-      - BATCH_MODE=true
-    command: ["python", "batch_analyze.py"]
-    networks:
-      - gameplay-network
-    profiles:
-      - batch
 
 networks:
   gameplay-network:
