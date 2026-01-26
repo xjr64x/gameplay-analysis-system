@@ -1,7 +1,5 @@
 # 🎮 Gameplay Analysis System (Call of Duty)
 
-&#x20; &#x20;
-
 > **An end-to-end AI system for extracting player behavior, tendencies, and evidence-grounded insights from raw Call of Duty gameplay footage.**
 
 **Audience:** AI/ML engineers, systems engineers, and technically inclined players interested in explainable, evidence-based performance analysis.
@@ -13,7 +11,7 @@ This project is built as an **AI systems pipeline**, not a single-model demo. It
 ## ⚡ TL;DR (One-Screen Overview)
 
 - 📹 Input: Raw Call of Duty gameplay video (no APIs, no game stats)
-- 👁️ Interpreter: Vision-language model produces timestamped narration
+- 👁 Interpreter: Vision-language model produces timestamped narration
 - 🧠 Reasoner: Analysis model extracts patterns and tendencies
 - 📊 Output: Evidence-grounded strengths, weaknesses, and next-match experiments
 - 🧩 Design goal: Explainable AI system under real-world hardware constraints
@@ -48,7 +46,7 @@ This system answers questions like:
 
 ---
 
-## 🏗️ High-Level Architecture
+## 🗂️ High-Level Architecture
 
 ```
 ┌──────────────────┐
@@ -57,7 +55,7 @@ This system answers questions like:
          ↓
 ┌──────────────────┐
 │ Frame Extraction │
-│ & Preprocessing │
+│ & Preprocessing  │
 └────────┬─────────┘
          ↓
 ┌──────────────────────────┐
@@ -81,12 +79,12 @@ This system answers questions like:
 └──────────────────────────┘
 ```
 
-> **Interpreter** answers *“What happened?”*\
-> **Reasoner** answers *“What does it mean?”*
+> **Interpreter** answers *"What happened?"*\
+> **Reasoner** answers *"What does it mean?"*
 
 ---
 
-## 👁️ Interpreter (Perception Layer)
+## 👁 Interpreter (Perception Layer)
 
 The interpreter is responsible for **seeing and describing the match**.
 
@@ -107,8 +105,8 @@ The interpreter is responsible for **seeing and describing the match**.
 - Conservative claims policy
   - Player actions are only stated when supported by HUD or clear visuals
 - Objective medal precision
-  - **“capturing”** → only when HUD explicitly shows capture progress
-  - **“captured”** → treated as team/objective credit unless player presence is explicit
+  - **"capturing"** → only when HUD explicitly shows capture progress
+  - **"captured"** → treated as team/objective credit unless player presence is explicit
 
 ### Output
 
@@ -137,7 +135,7 @@ The reasoner is responsible for **judgment, comparison, and insight generation**
 
 The reasoner is explicitly instructed to:
 
-- ❌ Avoid motivational or “supportive companion” tone
+- ❌ Avoid motivational or "supportive companion" tone
 - ❌ Avoid team coordination or callout advice
 - ❌ Avoid inventing mechanics, vehicles, or scorestreaks
 - ❌ Avoid claims without timestamped evidence
@@ -161,7 +159,7 @@ The reasoner is explicitly instructed to:
    Reasoner produces structured analysis and recommendations.
 
 3. **Interactive follow-up (optional)**\
-   Ask questions like *“Should I rotate earlier?”* or *“Was my positioning risky here?”*
+   Ask questions like *"Should I rotate earlier?"* or *"Was my positioning risky here?"*
 
 4. **Profile update**\
    Tendencies and advice are stored.
@@ -183,7 +181,7 @@ The reasoner is explicitly instructed to:
   - `qwen3:14b-q4_K_M` (reasoning)
 - GPU with **16GB+ VRAM** (RTX 5080 or equivalent)
 
-### Setup
+### Local Setup
 
 ```bash
 pip install -r requirements.txt
@@ -194,7 +192,7 @@ ollama pull qwen3:14b-q4_K_M
 # Place gameplay videos in videos/
 ```
 
-### Running the System
+### Running Locally
 
 ```bash
 # Full pipeline with interactive coaching
@@ -217,31 +215,33 @@ analyze_and_discuss(result, profile_path="player_profile.json")
 
 ### Docker Deployment
 
-The system can be run in Docker with GPU-accelerated Ollama:
+The system runs in Docker with GPU-accelerated Ollama. Two containers: `ollama` for model serving and `gameplay` for the analysis pipeline.
 
 ```bash
-# First-time setup: build and pull models
-docker compose build
-docker compose --profile init up
+# Create directories and configure
+mkdir -p videos output profiles
+cp .env.example .env
+# Edit .env with your video path, map, and game mode
 
-# Interactive mode
-docker compose run --rm gameplay-app
+# Start Ollama and pull models (first time only)
+docker compose up -d ollama
+docker compose --profile init up ollama-init
 
-# Batch mode (non-interactive)
-VIDEO_PATH=/app/videos/your_match.mp4 \
-MAP_NAME=Nuketown \
-GAME_MODE=Domination \
-docker compose --profile batch up gameplay-batch
+# Run analysis
+docker compose up gameplay
 ```
 
-Configuration via environment variables:
+Configuration via `.env` file:
 
 | Variable             | Default                        | Description                    |
 | -------------------- | ------------------------------ | ------------------------------ |
-| `OLLAMA_HOST`        | `http://ollama:11434`          | Ollama server URL              |
+| `VIDEO_PATH`         | -                              | Path to video (required)       |
+| `MAP_NAME`           | -                              | Map name (required)            |
+| `GAME_MODE`          | -                              | Game mode (required)           |
+| `PLAYER_ID`          | `player`                       | Player identifier              |
+| `QUALITY_MODE`       | `high`                         | Processing quality             |
 | `INTERPRETER_MODEL`  | `qwen3-vl:8b-instruct-q4_K_M`  | Vision model                   |
 | `REASONER_MODEL`     | `qwen3:14b-q4_K_M`             | Reasoning model                |
-| `QUALITY_MODE`       | `high`                         | Processing quality             |
 
 See [DOCKER.md](DOCKER.md) for full deployment documentation.
 
@@ -262,10 +262,10 @@ These constraints exist to preserve **explainability and reproducibility**.
 
 ## 🎯 Why This Project Exists
 
-Traditional post-game stats answer *“what happened.”*\
-This system is built to answer *“why it keeps happening.”*
+Traditional post-game stats answer *"what happened."*\
+This system is built to answer *"why it keeps happening."*
 
-As a player, I noticed recurring gaps between intent and execution—habits I couldn’t articulate, positioning tendencies I didn’t consciously choose, and patterns that only became obvious when viewed across multiple matches.
+As a player, I noticed recurring gaps between intent and execution—habits I couldn't articulate, positioning tendencies I didn't consciously choose, and patterns that only became obvious when viewed across multiple matches.
 
 This project tackles that problem through **AI systems engineering**:
 
@@ -329,6 +329,5 @@ A: No. It augments manual review by surfacing patterns that are hard to notice a
 **Q: Can this work on lower-end hardware?**\
 A: Partially. Quality modes trade coverage for detail, but 16GB+ VRAM is recommended for full fidelity.
 
-**Q: Is this Call of Duty–specific?**\
+**Q: Is this Call of Duty—specific?**\
 A: The current implementation is, but the architecture is intentionally generalizable.
-

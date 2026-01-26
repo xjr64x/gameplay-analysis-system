@@ -21,29 +21,62 @@ sudo apt-get install -y nvidia-container-toolkit
 sudo systemctl restart docker
 ```
 
-### Windows with WSL2
+### Windows with Docker Desktop
 
 Ensure you have:
 
-1. WSL2 with Ubuntu
-2. Docker Desktop with WSL2 backend
-3. NVIDIA drivers installed on Windows host
+1. Docker Desktop with WSL2 backend enabled
+2. NVIDIA drivers installed on Windows host
+3. GPU support enabled in Docker Desktop settings
+
+## Architecture
+
+```
+                    Docker Compose Network
+    +-----------------------------------------------------+
+    |                                                     |
+    |  +------------------+      +---------------------+  |
+    |  |    gameplay      |      |       ollama        |  |
+    |  |  (Python 3.12)   |----->|  (GPU: NVIDIA)      |  |
+    |  |                  | :11434|                     |  |
+    |  |  - interpreter   |      |  Models:            |  |
+    |  |  - reasoner      |      |  - qwen3-vl:8b      |  |
+    |  |  - batch_analyze |      |  - qwen3:14b        |  |
+    |  +--------+---------+      +---------------------+  |
+    |           |                                         |
+    +-----------|-----------------------------------------+
+                |
+    +-----------|-----------------------------------------+
+    |   Volumes |                                         |
+    |   +-------v-------+  +----------+  +-----------+    |
+    |   |    /videos    |  |  /output |  | /profiles |    |
+    |   | (input files) |  |  (JSON)  |  | (player)  |    |
+    |   +---------------+  +----------+  +-----------+    |
+    +-----------------------------------------------------+
+```
+
+Two containers:
+
+- **ollama**: GPU-accelerated model serving
+- **gameplay**: Python application that runs the analysis pipeline
 
 ## Quick Start
 
-### 1. First-Time Setup (Pull Models)
+### 1. First-Time Setup
 
 ```bash
 # Create required directories
 mkdir -p videos output profiles
 
-# Build the application image
-docker compose build
+# Copy and configure environment
+cp .env.example .env
+# Edit .env with your settings
 
-# Start Ollama and pull required models (may take 10-15 minutes)
-docker compose --profile init up
+# Start Ollama
+docker compose up -d ollama
 
-# Wait until you see "Models ready!" then Ctrl+C
+# Wait for healthy status, then pull models (10-15 minutes)
+docker compose --profile init up ollama-init
 ```
 
 ### 2. Place Your Video
@@ -53,30 +86,28 @@ docker compose --profile init up
 cp /path/to/your/gameplay.mp4 videos/
 ```
 
-### 3. Interactive Mode
+### 3. Configure Your Analysis
+
+Edit `.env`:
 
 ```bash
-# Start services and attach to interactive session
-docker compose run --rm gameplay-app
+VIDEO_PATH=/app/videos/your_gameplay.mp4
+MAP_NAME=Nuketown
+GAME_MODE=Domination
+PLAYER_ID=your_name
+BATCH_MODE=true
 ```
 
-Or with custom video/map/mode:
+### 4. Run Analysis
 
 ```bash
-VIDEO_PATH=/app/videos/your_gameplay.mp4 \
-MAP_NAME=Terminal \
-GAME_MODE=Hardpoint \
-docker compose run --rm gameplay-app
+docker compose up gameplay
 ```
 
-### 4. Batch Mode (Non-Interactive)
+For subsequent runs with different videos, update `.env` and run:
 
 ```bash
-# Run analysis without interactive prompts
-VIDEO_PATH=/app/videos/your_gameplay.mp4 \
-MAP_NAME=Terminal \
-GAME_MODE=Hardpoint \
-docker compose --profile batch up gameplay-batch
+docker compose up gameplay --force-recreate
 ```
 
 ### 5. Stop Services
@@ -90,32 +121,21 @@ docker compose down -v
 
 ## Configuration
 
-### Using .env File
-
-```bash
-# Copy the example configuration
-cp .env.example .env
-
-# Edit .env with your settings
-# Then run without specifying variables
-docker compose run --rm gameplay-app
-```
-
 ### Environment Variables
 
 | Variable | Default | Description |
-| ---------- | --------- | ------------- |
+| -------- | ------- | ----------- |
 | `OLLAMA_HOST` | `http://ollama:11434` | Ollama server URL |
 | `INTERPRETER_MODEL` | `qwen3-vl:8b-instruct-q4_K_M` | Vision model for video analysis |
 | `REASONER_MODEL` | `qwen3:14b-q4_K_M` | Reasoning model for pattern analysis |
 | `QUALITY_MODE` | `high` | Processing quality (`high` or `fast`) |
-| `VIDEO_PATH` | - | Path to video file (required for batch mode) |
-| `MAP_NAME` | - | Map name (required for batch mode) |
-| `GAME_MODE` | - | Game mode (required for batch mode) |
+| `VIDEO_PATH` | - | Path to video file (required) |
+| `MAP_NAME` | - | Map name (required) |
+| `GAME_MODE` | - | Game mode (required) |
 | `PLAYER_ID` | `player` | Player identifier for profile tracking |
-| `BATCH_MODE` | `false` | Enable non-interactive mode |
+| `BATCH_MODE` | `true` | Non-interactive batch processing |
 
-## Volume Locations
+### Volume Locations
 
 | Purpose | Container Path | Host Path |
 | ------- | -------------- | --------- |
@@ -155,10 +175,10 @@ docker compose logs ollama
 - Ensure GPU has 16GB+ VRAM
 - Try FAST quality mode: `QUALITY_MODE=fast`
 
-**Connection refused to Ollama:**
+**Container unhealthy:**
 
-- Wait for Ollama health check to pass
 - Check logs: `docker compose logs ollama`
+- Verify ollama is responding: `docker exec gameplay-ollama ollama list`
 
 ## Health Checks
 
@@ -166,14 +186,11 @@ docker compose logs ollama
 # Check service status
 docker compose ps
 
-# Check Ollama health
-curl http://localhost:11434/api/version
-
 # List available models
-docker compose exec ollama ollama list
+docker exec gameplay-ollama ollama list
 
 # View application logs
-docker compose logs gameplay-app
+docker compose logs gameplay
 ```
 
 ## Building for Production
@@ -183,34 +200,8 @@ docker compose logs gameplay-app
 docker compose build --no-cache
 
 # Tag for registry
-docker tag gameplay-analysis-system_gameplay-app:latest your-registry/gameplay-app:v1.0
+docker tag gameplay-analysis-system-gameplay:latest your-registry/gameplay-app:v1.0
 
 # Push to registry
 docker push your-registry/gameplay-app:v1.0
-```
-
-## Architecture
-
-```
-                    Docker Compose Network
-    +-----------------------------------------------------+
-    |                                                     |
-    |  +------------------+      +---------------------+  |
-    |  |  gameplay-app    |      |       ollama        |  |
-    |  |  (Python 3.12)   |----->|  (GPU: NVIDIA)      |  |
-    |  |                  | :11434|                     |  |
-    |  |  - interpreter   |      |  Models:            |  |
-    |  |  - reasoner      |      |  - qwen3-vl:8b      |  |
-    |  |  - batch_analyze |      |  - qwen3:14b        |  |
-    |  +--------+---------+      +---------------------+  |
-    |           |                                         |
-    +-----------|-----------------------------------------+
-                |
-    +-----------|-----------------------------------------+
-    |   Volumes |                                         |
-    |   +-------v-------+  +----------+  +-----------+    |
-    |   |    /videos    |  |  /output |  | /profiles |    |
-    |   | (input files) |  |  (JSON)  |  | (player)  |    |
-    |   +---------------+  +----------+  +-----------+    |
-    +-----------------------------------------------------+
 ```
