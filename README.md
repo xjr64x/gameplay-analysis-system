@@ -1,6 +1,6 @@
-# 🎮 Gameplay Analysis System (Call of Duty)
+# 🎮 Gameplay Analysis System
 
-> **An end-to-end AI system for extracting player behavior, tendencies, and evidence-grounded insights from raw Call of Duty gameplay footage.**
+> **An end-to-end AI system for extracting player behavior, tendencies, and evidence-grounded insights from raw gameplay footage.**
 
 **Audience:** AI/ML engineers, systems engineers, and technically inclined players interested in explainable, evidence-based performance analysis.
 
@@ -383,4 +383,4 @@ A: No. It augments manual review by surfacing patterns that are hard to notice a
 A: Partially. Quality modes trade coverage for detail, but 16GB+ VRAM is recommended for full fidelity.
 
 **Q: Is this Call of Duty—specific?**\
-A: The current implementation is, but the architecture is intentionally generalizable.
+A: The current implementation is, but the architecture is intentionally generalizable. Would only need to tweak prompts to adjust for other games.
