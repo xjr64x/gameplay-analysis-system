@@ -340,14 +340,6 @@ It is built as **portfolio-grade AI systems work**, not a toy demo.
 
 ---
 
-## 🚀 Future Plans
-
-- Support for additional games and analysis domains
-- Improved visualization of tendencies over time
-- Web-based dashboard for profile viewing
-
----
-
 ## 🤝 Contributing
 
 Contributions are welcome, especially in the following areas:
